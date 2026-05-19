@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # FastAPI Application
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - INFLUXDB_URL=http://influxdb:8086
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - influxdb
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # Celery Worker
+  celery-worker:
+    build: .
+    command: celery -A thermaguard.tasks.celery_app worker --loglevel=info
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - INFLUXDB_URL=http://influxdb:8086
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - influxdb
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # Celery Beat Scheduler
+  celery-beat:
+    build: .
+    command: celery -A thermaguard.tasks.celery_app beat --loglevel=info
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - INFLUXDB_URL=http://influxdb:8086
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # InfluxDB
+  influxdb:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=thermaguard
+      - DOCKER_INFLUXDB_INIT_BUCKET=sensor_data
+      - DOCKER_INFLUXDB_INIT_RETENTION=30d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  # Prometheus (optional - for monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
+  redis-data:
+  prometheus-data:
